@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+<title>Voxel Creative Mobile</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#000;font-family:-apple-system,BlinkMacSystemFont,sans-serif;touch-action:none}
+canvas{display:block;width:100%;height:100%}
+#hud{position:fixed;inset:0;pointer-events:none;color:white;text-shadow:0 2px 4px #000}
+#cross{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);font-size:25px;opacity:.9}
+#top{position:absolute;top:max(10px,env(safe-area-inset-top));left:12px;font-size:12px}
+#hotbar{position:absolute;left:50%;bottom:max(12px,env(safe-area-inset-bottom));transform:translateX(-50%);display:flex;gap:4px;max-width:96vw;overflow:hidden}
+.slot{min-width:39px;height:39px;border:2px solid #555;background:#18202dcc;border-radius:6px;text-align:center;line-height:35px;font-size:9px}
+.slot.sel{border-color:white;box-shadow:0 0 9px white}
+#joystick{position:fixed;left:22px;bottom:92px;width:118px;height:118px;border-radius:50%;background:#ffffff20;border:2px solid #ffffff45;pointer-events:auto}
+#stick{position:absolute;width:52px;height:52px;left:31px;top:31px;border-radius:50%;background:#ffffff55;border:2px solid #fff8}
+#buttons{position:fixed;right:18px;bottom:86px;display:grid;grid-template-columns:64px 64px;gap:9px;pointer-events:auto}
+.btn{height:55px;border:1px solid #fff6;border-radius:15px;background:#111b;color:#fff;font-weight:700;font-size:12px}
+#start{position:fixed;inset:0;display:grid;place-items:center;background:#06101ddd;z-index:10}
+#start button{font-size:20px;padding:16px 25px;border:0;border-radius:14px}
+#hint{margin-top:10px;color:#ddd;font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div id="hud">
+ <div id="top">VOXEL CREATIVE • <span id="fps">--</span> FPS<br>Touch: joystick + swipe • Place/Break buttons</div>
+ <div id="cross">+</div>
+ <div id="hotbar"></div>
+</div>
+<div id="joystick"><div id="stick"></div></div>
+<div id="buttons">
+ <button class="btn" id="up">▲</button><button class="btn" id="down">▼</button>
+ <button class="btn" id="break">BREAK</button><button class="btn" id="place">PLACE</button>
+</div>
+<div id="start"><div><button id="go">ENTER CREATIVE WORLD</button><div id="hint">Optimized for iPhone • Best in landscape</div></div></div>
+
+<script type="module">
+import * as THREE from 'https://cdn.jsdelivr.net/npm/three@0.180.0/build/three.module.js';
+
+const scene=new THREE.Scene();
+scene.background=new THREE.Color(0x88cbed);
+scene.fog=new THREE.FogExp2(0x88cbed,0.0028);
+const camera=new THREE.PerspectiveCamera(72,innerWidth/innerHeight,.05,900);
+camera.position.set(0,30,42);
+
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setSize(innerWidth,innerHeight);
+renderer.setPixelRatio(Math.min(devicePixelRatio,1.35));
+renderer.shadowMap.enabled=true;
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+renderer.outputColorSpace=THREE.SRGBColorSpace;
+renderer.toneMapping=THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure=1.15;
+document.body.appendChild(renderer.domElement);
+
+scene.add(new THREE.HemisphereLight(0xbfeaff,0x30452d,1.35));
+const sun=new THREE.DirectionalLight(0xfff1ca,2.7);
+sun.position.set(-150,240,100);sun.castShadow=true;
+sun.shadow.mapSize.set(1536,1536);
+sun.shadow.camera.left=-150;sun.shadow.camera.right=150;
+sun.shadow.camera.top=150;sun.shadow.camera.bottom=-150;
+scene.add(sun);
+
+const blocks=[
+ ['Grass',0x55a948],['Dirt',0x875a39],['Stone',0x777b80],['Sand',0xd7c279],
+ ['Wood',0x8b5b2b],['Leaves',0x3d9147],['Snow',0xe9f3f5],['Glass',0x9edfff],['Glow',0xffd35b]
+];
+const mats=blocks.map((b,i)=>new THREE.MeshStandardMaterial({
+ color:b[1],roughness:i===7?.15:.92,transparent:i===7,opacity:i===7?.42:1
+}));
+const geo=new THREE.BoxGeometry(1,1,1);
+const world=new Map(),meshes=[];
+const K=(x,y,z)=>x+','+y+','+z;
+
+function addBlock(x,y,z,t){
+ const k=K(x,y,z);if(world.has(k))return;
+ const m=new THREE.Mesh(geo,mats[t]);m.position.set(x+.5,y+.5,z+.5);
+ m.castShadow=t!==7;m.receiveShadow=true;m.userData={x,y,z,t};
+ scene.add(m);world.set(k,m);meshes.push(m);
+}
+function removeBlock(x,y,z){
+ const m=world.get(K(x,y,z));if(!m)return;
+ scene.remove(m);world.delete(K(x,y,z));const i=meshes.indexOf(m);if(i>=0)meshes.splice(i,1);
+}
+function H(x,z){
+ return Math.max(2,Math.floor(12+Math.sin(x*.055)*3+Math.cos(z*.047)*3+
+   Math.sin(x*.09+Math.cos(z*.04))*2+Math.cos(z*.08-x*.03)*2-
+   Math.max(0,Math.hypot(x,z)-55)*.12));
+}
+function topType(x,z,h){
+ const v=Math.sin(x*.025)+Math.cos(z*.021);
+ if(h>=18)return 6;
+ if(v>1.0&&h<10)return 3;
+ return 0;
+}
+const R=55;
+for(let x=-R;x<=R;x++)for(let z=-R;z<=R;z++){
+ const h=H(x,z),t=topType(x,z,h);
+ for(let y=0;y<=h;y++){
+   let b=2;if(y===h)b=t;else if(y>=h-3)b=t===3?3:1;
+   addBlock(x,y,z,b);
+ }
+ if(t===0&&Math.random()<.022&&h>7){
+   for(let y=h+1;y<h+4;y++)addBlock(x,y,z,4);
+   for(let dx=-2;dx<=2;dx++)for(let dz=-2;dz<=2;dz++)for(let dy=2;dy<=4;dy++)
+     if(Math.abs(dx)+Math.abs(dz)<4&&Math.random()>.16)addBlock(x+dx,h+dy,z+dz,5);
+ }
+}
+const waterMat=new THREE.MeshPhysicalMaterial({color:0x208bd2,transparent:true,opacity:.5,roughness:.08});
+const water=new THREE.Mesh(new THREE.PlaneGeometry(1100,1100),waterMat);
+water.rotation.x=-Math.PI/2;water.position.y=7.05;scene.add(water);
+
+// hotbar
+const hot=document.querySelector('#hotbar');let selected=0;
+blocks.forEach((b,i)=>{const s=document.createElement('div');s.className='slot'+(!i?' sel':'');s.textContent=(i+1)+' '+b[0];hot.appendChild(s)});
+function select(i){selected=i;[...hot.children].forEach((e,j)=>e.classList.toggle('sel',i===j));}
+let joy={x:0,y:0},moving=false,start={x:0,y:0};
+const joyEl=document.querySelector('#joystick'),stick=document.querySelector('#stick');
+joyEl.addEventListener('touchstart',e=>{moving=true;updateJoy(e.touches[0])},{passive:false});
+joyEl.addEventListener('touchmove',e=>{updateJoy(e.touches[0]);e.preventDefault()},{passive:false});
+joyEl.addEventListener('touchend',()=>{moving=false;joy={x:0,y:0};stick.style.left='31px';stick.style.top='31px'});
+function updateJoy(t){
+ const r=joyEl.getBoundingClientRect(),cx=r.left+r.width/2,cy=r.top+r.height/2;
+ let x=(t.clientX-cx)/45,y=(t.clientY-cy)/45,l=Math.hypot(x,y);if(l>1){x/=l;y/=l}
+ joy={x,y};stick.style.left=(31+x*35)+'px';stick.style.top=(31+y*35)+'px';
+}
+
+let look=false,lastX=0,lastY=0,pitch=0,yaw=0;
+addEventListener('touchstart',e=>{
+ if(e.target.closest('#joystick,#buttons,#start,#hotbar'))return;
+ const t=e.touches[0];look=true;lastX=t.clientX;lastY=t.clientY;
+},{passive:true});
+addEventListener('touchmove',e=>{
+ if(!look)return;const t=e.touches[0];
+ yaw-=(t.clientX-lastX)*.004;pitch-=(t.clientY-lastY)*.004;
+ pitch=Math.max(-1.45,Math.min(1.45,pitch));lastX=t.clientX;lastY=t.clientY;
+ camera.rotation.order='YXZ';camera.rotation.y=yaw;camera.rotation.x=pitch;e.preventDefault();
+},{passive:false});
+addEventListener('touchend',()=>look=false);
+
+const ray=new THREE.Raycaster();
+function target(){
+ ray.setFromCamera(new THREE.Vector2(0,0),camera);
+ return ray.intersectObjects(meshes,false)[0];
+}
+function doBreak(){const h=target();if(h){const p=h.object.userData;removeBlock(p.x,p.y,p.z)}}
+function doPlace(){const h=target();if(h){const p=h.object.userData,n=h.face.normal;
+ const x=p.x+Math.round(n.x),y=p.y+Math.round(n.y),z=p.z+Math.round(n.z);
+ if(!world.has(K(x,y,z)))addBlock(x,y,z,selected)}}
+document.querySelector('#break').onclick=doBreak;
+document.querySelector('#place').onclick=doPlace;
+document.querySelector('#up').onpointerdown=()=>up=true;
+document.querySelector('#up').onpointerup=()=>up=false;
+document.querySelector('#down').onpointerdown=()=>down=true;
+document.querySelector('#down').onpointerup=()=>down=false;
+let up=false,down=false;
+
+let last=performance.now(),frames=0,fps=0;
+function animate(now){
+ requestAnimationFrame(animate);const dt=Math.min(.035,(now-last)/1000);last=now;
+ const speed=22*dt*(Math.abs(joy.x)+Math.abs(joy.y)>1.2?1.6:1);
+ if(joy.y)camera.translateZ(joy.y*speed);
+ if(joy.x)camera.translateX(joy.x*speed);
+ if(up)camera.position.y+=speed;if(down)camera.position.y-=speed;
+ sun.position.x=Math.sin(now*.00003)*240;sun.position.z=Math.cos(now*.00003)*240;
+ renderer.render(scene,camera);
+ frames++;if(now%1000<20){fps=frames;frames=0;document.querySelector('#fps').textContent=fps}
+}
+document.querySelector('#go').onclick=()=>document.querySelector('#start').remove();
+for(let i=0;i<9;i++)document.addEventListener('keydown',e=>{if(e.key==String(i+1))select(i)});
+addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight)});
+animate(performance.now());
+</script>
+</body>
+</html>
